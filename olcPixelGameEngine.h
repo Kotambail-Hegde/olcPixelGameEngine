@@ -399,6 +399,7 @@ int main()
 #pragma endregion
 
 #define PGE_VER 224
+#define PGE_FORK_ID 0xf84f30da //CRC32B is used to uniquely identify this Fork!
 
 // O------------------------------------------------------------------------------O
 // | COMPILER CONFIGURATION ODDITIES                                              |
