@@ -941,10 +941,12 @@ namespace olc
 		virtual olc::rcode ThreadStartUp() = 0;
 		virtual olc::rcode ThreadCleanUp() = 0;
 		virtual olc::rcode CreateGraphics(bool bFullScreen, bool bEnableVSYNC, const olc::vi2d& vViewPos, const olc::vi2d& vViewSize) = 0;
-		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen) = 0;
+		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen, bool bMenubar = false) = 0;
 		virtual olc::rcode SetWindowTitle(const std::string& s) = 0;
 		virtual olc::rcode StartSystemEventLoop() = 0;
 		virtual olc::rcode HandleSystemEvent() = 0;
+		virtual olc::rcode GetWindowHandle(void* &handle) = 0;
+		virtual olc::rcode GetWindowPos(int32_t* windowPos_x, int32_t* windowPos_y) = 0;
 		static olc::PixelGameEngine* ptrPGE;
 	};
 
@@ -966,7 +968,9 @@ namespace olc
 	public:
 		olc::rcode Construct(int32_t screen_w, int32_t screen_h, int32_t pixel_w, int32_t pixel_h,
 			bool full_screen = false, bool vsync = false, bool cohesion = false);
-		olc::rcode Start();
+		olc::rcode Start(int32_t windowPos_x = 30, int32_t windowPos_y = 30, bool bMenubar = false);
+		olc::rcode GetWindowHandle(void* &handle);
+		olc::rcode GetWindowPos(int32_t* windowPos_x, int32_t* windowPos_y);
 
 	public: // User Override Interfaces
 		// Called once on application startup, use to load your resources
@@ -1205,6 +1209,7 @@ namespace olc
 #endif
 	public: // Branding
 		std::string sAppName;
+		std::string sOverridenAppName;
 
 	private: // Inner mysterious workings
 		olc::Sprite*     pDrawTarget = nullptr;
@@ -1992,12 +1997,12 @@ namespace olc
 	}
 
 #if !defined(PGE_USE_CUSTOM_START)
-	olc::rcode PixelGameEngine::Start()
+	olc::rcode PixelGameEngine::Start(int32_t windowPos_x, int32_t windowPos_y, bool bMenubar)
 	{
 		if (platform->ApplicationStartUp() != olc::OK) return olc::FAIL;
 
 		// Construct the window
-		if (platform->CreateWindowPane({ 30,30 }, vWindowSize, bFullScreen) != olc::OK) return olc::FAIL;
+		if (platform->CreateWindowPane({ windowPos_x,windowPos_y }, vWindowSize, bFullScreen, bMenubar) != olc::OK) return olc::FAIL;
 		olc_UpdateWindowSize(vWindowSize.x, vWindowSize.y);
 
 		// Start the thread
@@ -2015,6 +2020,20 @@ namespace olc
 		return olc::OK;
 	}
 #endif
+
+	olc::rcode PixelGameEngine::GetWindowHandle(void* &handle)
+	{
+		void* platformHandle = nullptr;
+		platform->GetWindowHandle(platformHandle);
+		handle = platformHandle;
+		return olc::OK;
+	}
+
+	olc::rcode PixelGameEngine::GetWindowPos(int32_t* windowPos_x, int32_t* windowPos_y)
+	{
+		platform->GetWindowPos(windowPos_x, windowPos_y);
+		return olc::OK;
+	}
 
 	void PixelGameEngine::SetDrawTarget(Sprite* target)
 	{
@@ -3944,7 +3963,15 @@ namespace olc
 		{
 			nLastFPS = nFrameCount;
 			fFrameTimer -= 1.0f;
-			std::string sTitle = "OneLoneCoder.com - Pixel Game Engine - " + sAppName + " - FPS: " + std::to_string(nFrameCount);
+			std::string sTitle;
+			if (sOverridenAppName.empty())
+			{
+				sTitle = "OneLoneCoder.com - Pixel Game Engine - " + sAppName + " - FPS: " + std::to_string(nFrameCount);
+			}
+			else
+			{
+				sTitle = sOverridenAppName + " - FPS: " + std::to_string(nFrameCount);
+			}
 			platform->SetWindowTitle(sTitle);
 			nFrameCount = 0;
 		}
@@ -4086,10 +4113,12 @@ namespace olc
 		virtual olc::rcode ThreadStartUp() { return olc::rcode::OK; }
 		virtual olc::rcode ThreadCleanUp() { return olc::rcode::OK; }
 		virtual olc::rcode CreateGraphics(bool bFullScreen, bool bEnableVSYNC, const olc::vi2d& vViewPos, const olc::vi2d& vViewSize) { return olc::rcode::OK; }
-		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen) { return olc::rcode::OK; }
+		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen, bool bMenubar) { return olc::rcode::OK; }
 		virtual olc::rcode SetWindowTitle(const std::string& s) { return olc::rcode::OK; }
 		virtual olc::rcode StartSystemEventLoop() { return olc::rcode::OK; }
 		virtual olc::rcode HandleSystemEvent() { return olc::rcode::OK; }
+		virtual olc::rcode GetWindowHandle(void*& handle) { return olc::rcode::OK; }
+		virtual olc::rcode GetWindowPos(int32_t* windowPos_x, int32_t* windowPos_y) { return olc::rcode::OK; }
 	};
 #endif
 }
@@ -5412,7 +5441,7 @@ namespace olc
 				return olc::rcode::FAIL;
 		}
 
-		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen) override
+		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen, bool bMenubar) override
 		{
 			WNDCLASS wc;
 			wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
@@ -5448,7 +5477,7 @@ namespace olc
 
 			// Keep client size as requested
 			RECT rWndRect = { 0, 0, vWindowSize.x, vWindowSize.y };
-			AdjustWindowRectEx(&rWndRect, dwStyle, FALSE, dwExStyle);
+			AdjustWindowRectEx(&rWndRect, dwStyle, (BOOL)bMenubar, dwExStyle);
 			int width = rWndRect.right - rWndRect.left;
 			int height = rWndRect.bottom - rWndRect.top;
 
@@ -5525,6 +5554,21 @@ namespace olc
 		}
 
 		virtual olc::rcode HandleSystemEvent() override { return olc::rcode::FAIL; }
+
+		virtual olc::rcode GetWindowHandle(void* &handle) override 
+		{
+			handle = (void*)(olc_hWnd);
+			return olc::rcode::OK;
+		}
+
+		virtual olc::rcode GetWindowPos(int32_t* windowPos_x, int32_t* windowPos_y) override
+		{
+			RECT rect;
+			GetWindowRect(olc_hWnd, &rect);
+			*windowPos_x = (int32_t)rect.left;
+			*windowPos_y = (int32_t)rect.top;
+			return olc::rcode::OK;
+		}
 
 		// Windows Event Handler - this is statically connected to the windows event system
 		static LRESULT CALLBACK olc_WindowEvent(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -5656,7 +5700,7 @@ namespace olc
 				return olc::rcode::FAIL;
 		}
 
-		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen) override
+		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen, bool bMenubar) override
 		{
 			using namespace X11;
 			XInitThreads();
@@ -5848,6 +5892,16 @@ namespace olc
 			}
 			return olc::OK;
 		}
+
+		virtual olc::rcode GetWindowHandle(void*& handle) override
+		{
+			return olc::rcode::OK;
+		}
+
+		virtual olc::rcode GetWindowPos(int32_t* windowPos_x, int32_t* windowPos_y) override
+		{
+			return olc::rcode::OK;
+		}
 	};
 }
 #endif
@@ -5968,7 +6022,7 @@ namespace olc {
 			ptrPGE->olc_CoreUpdate();
 		}
 
-		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen) override
+		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen, bool bMenubar) override
 		{
 #if defined(__APPLE__)
 			Class GLUTViewClass = objc_getClass("GLUTView");
@@ -6126,17 +6180,27 @@ namespace olc {
 		{
 			return olc::OK;
 		}
+
+		virtual olc::rcode GetWindowHandle(void*& handle) override
+		{
+			return olc::OK;
+		}
+
+		virtual olc::rcode GetWindowPos(int32_t* windowPos_x, int32_t* windowPos_y) override
+		{
+			return olc::OK;
+		}
 	};
 
 	std::atomic<bool>* Platform_GLUT::bActiveRef{ nullptr };
 
 	//Custom Start
-	olc::rcode PixelGameEngine::Start()
+	olc::rcode PixelGameEngine::Start(int32_t windowPos_x, int32_t windowPos_y, bool bMenubar)
 	{
 		if (platform->ApplicationStartUp() != olc::OK) return olc::FAIL;
 
 		// Construct the window
-		if (platform->CreateWindowPane({ 30,30 }, vWindowSize, bFullScreen) != olc::OK) return olc::FAIL;
+		if (platform->CreateWindowPane({ windowPos_x,windowPos_y }, vWindowSize, bFullScreen, bMenubar) != olc::OK) return olc::FAIL;
 		olc_UpdateWindowSize(vWindowSize.x, vWindowSize.y);
 
 		if (platform->ThreadStartUp() == olc::FAIL)  return olc::FAIL;
@@ -6221,7 +6285,7 @@ namespace olc
 				return olc::rcode::FAIL;
 		}
 
-		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen) override
+		virtual olc::rcode CreateWindowPane(const olc::vi2d& vWindowPos, olc::vi2d& vWindowSize, bool bFullScreen, bool bMenubar) override
 		{
 			emscripten_set_canvas_element_size("#canvas", vWindowSize.x, vWindowSize.y);
 
@@ -6521,6 +6585,12 @@ namespace olc
 		virtual olc::rcode HandleSystemEvent() override
 		{ return olc::OK; }
 
+		virtual olc::rcode GetWindowHandle(void*& handle) override
+		{ return olc::OK; }
+
+		virtual olc::rcode GetWindowPos(int32_t* windowPos_x, int32_t* windowPos_y) override
+		{ return olc::OK; }
+
 		static void MainLoop()
 		{
 			olc::Platform::ptrPGE->olc_CoreUpdate();
@@ -6541,12 +6611,12 @@ namespace olc
 
 	//Emscripten needs a special Start function
 	//Much of this is usually done in EngineThread, but that isn't used here
-	olc::rcode PixelGameEngine::Start()
+	olc::rcode PixelGameEngine::Start(int32_t windowPos_x, int32_t windowPos_y, bool bMenubar)
 	{
 		if (platform->ApplicationStartUp() != olc::OK) return olc::FAIL;
 
 		// Construct the window
-		if (platform->CreateWindowPane({ 30,30 }, vWindowSize, bFullScreen) != olc::OK) return olc::FAIL;
+		if (platform->CreateWindowPane({ windowPos_x,windowPos_y }, vWindowSize, bFullScreen, bMenubar) != olc::OK) return olc::FAIL;
 		olc_UpdateWindowSize(vWindowSize.x, vWindowSize.y);
 
 		// Some implementations may form an event loop here
